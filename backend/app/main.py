@@ -1,23 +1,21 @@
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.agent import build_graph
-from app.api import chat, meta
-from app.config import get_settings
+from app.api import api_router
+from app.core.config import get_settings
+from app.core.logging import setup_logging
+from app.memory import open_checkpointer
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+setup_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings()
-    settings.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
-    async with AsyncSqliteSaver.from_conn_string(str(settings.checkpoint_db)) as saver:
-        app.state.graph = build_graph(saver)
+    async with open_checkpointer() as checkpointer:
+        app.state.graph = build_graph(checkpointer)
         yield
 
 
@@ -30,5 +28,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(chat.router)
-app.include_router(meta.router)
+app.include_router(api_router)

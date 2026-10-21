@@ -23,15 +23,49 @@
   END        ── 全程状态由 Checkpoint(SQLite) 按 thread_id 持久化
 ```
 
-| 概念 | 对应代码 |
-| --- | --- |
-| State（全局状态） | `backend/app/agent/state.py` |
-| Router 节点 + 意图映射 | `backend/app/agent/nodes.py` 的 `router_node`、`backend/app/agent/intents.py` |
-| Agent 节点（ReAct 推理） | `backend/app/agent/nodes.py` 的 `agent_node` |
-| Tools 节点（白名单校验 + 并发执行） | `backend/app/agent/nodes.py` 的 `tools_node` |
-| 图的组装（Node + Edge） | `backend/app/agent/graph.py` |
-| 全局工具注册表 | `backend/app/tools/registry.py` |
-| SSE 流式接口 | `backend/app/api/chat.py` |
+## 后端目录结构
+
+依赖方向自上而下：`api → services → agent → tools / llm / memory → core`，下层不引用上层。
+
+```
+backend/
+├── app/
+│   ├── main.py                 # 应用入口：生命周期、中间件、挂载路由
+│   ├── core/                   # 基础设施
+│   │   ├── config.py           #   配置（读取 .env）
+│   │   └── logging.py          #   日志
+│   ├── llm/                    # 模型接入
+│   │   └── factory.py          #   ChatOllama 实例工厂（Agent / Router 模型）
+│   ├── agent/                  # LangGraph 智能体核心
+│   │   ├── state.py            #   State 定义
+│   │   ├── intents.py          #   「意图 → 工具」配置映射
+│   │   ├── prompts.py          #   提示词
+│   │   ├── nodes/              #   节点（每个节点一个文件）
+│   │   │   ├── router.py       #     意图识别、下发工具子集
+│   │   │   ├── agent.py        #     ReAct 单次推理
+│   │   │   └── tools.py        #     工具白名单校验 + 并发执行
+│   │   ├── edges.py            #   条件边（路由函数）
+│   │   └── graph.py            #   组装 Node + Edge，编译图
+│   ├── tools/                  # 工具（按命名空间分文件）
+│   │   ├── registry.py         #   全局工具注册表
+│   │   ├── math_tools.py       #   math_*
+│   │   └── datetime_tools.py   #   datetime_*
+│   ├── memory/                 # 记忆与持久化
+│   │   └── checkpointer.py     #   会话 Checkpoint（SQLite）
+│   ├── services/               # 业务逻辑（与传输协议无关）
+│   │   ├── chat_stream.py      #   LangGraph 流 → 事件流（SSE 与 CLI 共用）
+│   │   └── threads.py          #   会话历史读取 / 删除 / 序列化
+│   ├── schemas/                # 请求 / 响应模型
+│   │   └── chat.py
+│   └── api/                    # HTTP 层（只做参数解析与协议转换）
+│       ├── deps.py             #   依赖注入（获取 graph）
+│       └── routes/
+│           ├── chat.py         #   POST /api/chat/stream
+│           ├── threads.py      #   /api/threads/*
+│           └── system.py       #   /api/health、/api/meta
+├── scripts/cli_chat.py         # 命令行调试入口
+└── tests/                      # 单元测试
+```
 
 ## 快速开始
 
@@ -56,6 +90,7 @@ npm run dev
 cd backend
 uv run python -m scripts.cli_chat                       # 交互模式
 uv run python -m scripts.cli_chat "123*456 等于多少"     # 单次提问
+uv run pytest                                           # 运行单元测试
 ```
 
 ## 接口
@@ -81,8 +116,10 @@ SSE 事件协议：
 
 ## 扩展指南
 
-**新增工具**：在 `backend/app/tools/` 下用 `@tool` 定义函数（命名用 `命名空间_动作`，docstring 写清楚用途和边界），
+**新增工具**：在 `backend/app/tools/` 下按命名空间新建或复用 `xxx_tools.py`，用 `@tool` 定义函数（命名用 `命名空间_动作`，docstring 写清楚用途和边界），
 在 `backend/app/tools/__init__.py` 中 `registry.register(...)`，再到 `backend/app/agent/intents.py` 把工具挂到对应意图下。
+
+**新增节点**：在 `backend/app/agent/nodes/` 下新建文件，在 `graph.py` 中注册节点和边；如需推送给前端，在 `services/chat_stream.py` 的 `_update_events` 中补充事件。
 
 **新增意图**：在 `INTENTS` 中添加 `Intent(name, description, tools)`，Router 的提示词会自动包含它；
 前端可在 `frontend/src/components/AssistantMessageView.tsx` 的 `INTENT_LABEL` 中补中文名。

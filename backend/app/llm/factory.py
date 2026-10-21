@@ -2,7 +2,7 @@ from functools import lru_cache
 
 from langchain_ollama import ChatOllama
 
-from app.config import get_settings
+from app.core.config import get_settings
 
 
 @lru_cache

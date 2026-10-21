@@ -2,10 +2,10 @@ import httpx
 from fastapi import APIRouter
 
 from app.agent.intents import INTENTS
-from app.config import get_settings
+from app.core.config import get_settings
 from app.tools import registry
 
-router = APIRouter(prefix="/api", tags=["meta"])
+router = APIRouter(tags=["system"])
 
 
 @router.get("/health")

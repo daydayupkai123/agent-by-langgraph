@@ -1,10 +1,13 @@
-"""把 LangGraph 的消息转换成前端使用的结构。
+"""会话（thread）的读取与删除，以及 LangGraph 消息到前端结构的转换。
 
 前端的一条 assistant 消息由有序的 parts 组成（思考 / 文本 / 工具调用），
 一次 ReAct 循环中多次 agent 输出与工具结果会合并到同一条 assistant 消息里。
 """
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
+from langgraph.graph.state import CompiledStateGraph
+
+from app.agent import thread_config
 
 
 def serialize_history(messages: list[AnyMessage]) -> list[dict]:
@@ -40,3 +43,13 @@ def serialize_history(messages: list[AnyMessage]) -> list[dict]:
                     part["result"] = msg.text
                     part["status"] = "error" if msg.status == "error" else "done"
     return result
+
+
+async def get_thread_history(graph: CompiledStateGraph, thread_id: str) -> list[dict]:
+    snapshot = await graph.aget_state(thread_config(thread_id))
+    messages = snapshot.values.get("messages", []) if snapshot.values else []
+    return serialize_history(messages)
+
+
+async def delete_thread(graph: CompiledStateGraph, thread_id: str) -> None:
+    await graph.checkpointer.adelete_thread(thread_id)
