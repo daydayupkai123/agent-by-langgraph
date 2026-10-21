@@ -1,0 +1,6 @@
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+文档资料.md
